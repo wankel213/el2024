@@ -41,20 +41,11 @@ namespace bag {
     } in_EBOXt;
 
     typedef struct PACKED {
-        uint8         counter;
-        int16         stream[100];
-    } in_EBOX_streamt;
-
-    typedef struct PACKED {
         uint8         control;
         uint8         dout;
         int16         aout[2];
         uint16        pwmout[2];
     } out_EBOXt;
-
-    typedef struct PACKED {
-        uint8         control;  
-    } out_EBOX_streamt;
 
 }
 
@@ -66,15 +57,11 @@ int dorun = 0;
 int64 integral=0;
 uint32 cyclecount=0;
 
-bag::in_EBOX_streamt  *in_EBOX;
-bag::out_EBOX_streamt *out_EBOX;
-
+bag::in_EBOXt  *in_EBOX;
+bag::out_EBOXt *out_EBOX;
 
 double     ain[2];
 int        ainc;
-int        streampos;
-int16      stream1[MAXSTREAM];
-int16      stream2[MAXSTREAM];
 
 pthread_cond_t  cond  = PTHREAD_COND_INITIALIZER;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -115,35 +102,40 @@ void* ecatthread( void *ptr ) {
 
     printf("ethercat thread\n");
 
-   struct timespec   ts;
-   struct timeval    tp;
-   int ht;
-   int i;
-   int pcounter = 0;
+//    struct timespec   ts;
+//    struct timeval    tp;
+//    int ht;
+//    int i;
+//    int pcounter = 0;
    int64 cycletime;
 
-   int64 toff;
-    int DCdiff;
+//    int64 toff;
+//     int DCdiff;
 
    pthread_mutex_lock(&mutex);
-   gettimeofday(&tp, NULL);
+//    gettimeofday(&tp, NULL);
 
     /* Convert from timeval to timespec */
-   ts.tv_sec  = tp.tv_sec;
-   ht = (tp.tv_usec / 1000) + 1; /* round to nearest ms */
-   ts.tv_nsec = ht * 1000000;
-   cycletime = *(int *)ptr * 1000; /* cycletime in ns */
-   toff = 0;
-   dorun = 0;
+//    ts.tv_sec  = tp.tv_sec;
+//    ht = (tp.tv_usec / 1000) + 1; /* round to nearest ms */
+//    ts.tv_nsec = ht * 1000000;
+//    cycletime = *(int *)ptr * 1000; /* cycletime in ns */
+//    toff = 0;
+//    dorun = 0;
    while(1)
    {
       /* calculate next cycle start */
-      add_timespec(&ts, cycletime + toff);
+    //   add_timespec(&ts, cycletime + toff);
       /* wait to cycle start */
-      pthread_cond_timedwait(&cond, &mutex, &ts);
+    //   pthread_cond_timedwait(&cond, &mutex, &ts);
       if (dorun>0)
       {
-         gettimeofday(&tp, NULL);
+        //  gettimeofday(&tp, NULL);
+
+         // TODO
+         out_EBOX->aout[0] = 0x3FFF;
+         out_EBOX->aout[1] = 0x3FFF;
+         out_EBOX->dout = 0b01010101;
 
          ec_send_processdata();
 
@@ -151,32 +143,9 @@ void* ecatthread( void *ptr ) {
 
          cyclecount++;
 
-
-         if((in_EBOX->counter != pcounter) && (streampos < (MAXSTREAM - 1)))
-         {
-            // check if we have timing problems in master
-            // if so, overwrite stream data so it shows up clearly in plots.
-            if(in_EBOX->counter > (pcounter + 1))
-            {
-               for(i = 0 ; i < 50 ; i++)
-               {
-                  stream1[streampos]   = 20000;
-                  stream2[streampos++] = -20000;
-               }
-            }
-            else
-            {
-               for(i = 0 ; i < 50 ; i++)
-               {
-                  stream1[streampos]   = in_EBOX->stream[i * 2];
-                  stream2[streampos++] = in_EBOX->stream[(i * 2) + 1];
-               }
-            }
-            pcounter = in_EBOX->counter;
-         }
-
+        //  pcounter = in_EBOX->counter;
          /* calulate toff to get linux time and DC synced */
-         ec_sync(ec_DCtime, cycletime, &toff);
+        //  ec_sync(ec_DCtime, cycletime, &toff);
       }
    }
 }
@@ -210,8 +179,8 @@ void eboxStart (){
 
     // ----------------------------------------------
 
-    printf("thread created\n");
-    printf("Num slaves: %d\n", ec_slavecount);
+    printf("Number of slaves: %d\n", ec_slavecount);
+    printf("Ebox state: %s\n", NameState(ec_slave[1].state));
 
     int os;
     uint32 ob;
@@ -222,31 +191,15 @@ void eboxStart (){
     ec_send_processdata();
     ec_receive_processdata(EC_TIMEOUTRET);
 
-    printf("**Ebox State: %s\n", NameState(ec_slave[1].state));
+    printf("Ebox state: %s\n", NameState(ec_slave[1].state));
 
     // Change state of slaves
     ec_slave[0].state = EC_STATE_PRE_OP; // set global state for all slaves
     ec_writestate(0); // write state for all slaves
     ec_statecheck(0, EC_STATE_PRE_OP,  EC_TIMEOUTSTATE); // wait for all slaves to change state
 
-    printf("**Ebox State: %s\n", NameState(ec_slave[1].state));
-
-    // check if first slave is an E/BOX
-    if (( ec_slavecount >= 1 )) {
-        // reprogram PDO mapping to set slave in stream mode
-        // this can only be done in pre-OP state
-        for(int i=1; i <= ec_slavecount; i++) {
-            if(strcmp(ec_slave[i].name,"E/BOX") == 0){
-                printf("Ebox State to set streaming: %s\n", NameState(ec_slave[i].state));
-                os=sizeof(ob2); ob2 = 0x1601;
-                ec_SDOwrite(i,0x1c12,01,FALSE,os,&ob2,EC_TIMEOUTRXM);
-                os=sizeof(ob2); ob2 = 0x1a01;
-                ec_SDOwrite(i,0x1c13,01,FALSE,os,&ob2,EC_TIMEOUTRXM);
-            }
-        }
-    }
-
-    
+    // TODO: set configurations for the slaves
+    printf("Ebox state: %s\n", NameState(ec_slave[1].state));
 
     ec_config_map(&IOmap);
 
@@ -254,8 +207,6 @@ void eboxStart (){
     ec_statecheck(0, EC_STATE_SAFE_OP,  EC_TIMEOUTSTATE);
 
     ec_configdc();
-
-    
 
     if (( ec_slavecount >= 1 )) {
         // reprogram PDO mapping to set slave in stream mode
@@ -266,15 +217,15 @@ void eboxStart (){
                 printf("Ebox state: %s\n", NameState(ec_slave[i].state));
 
                  /* connect struct pointers to slave I/O pointers */
-                in_EBOX = (bag::in_EBOX_streamt*) ec_slave[i].inputs;
-                out_EBOX = (bag::out_EBOX_streamt*) ec_slave[i].outputs;
+                in_EBOX = (bag::in_EBOXt*) ec_slave[i].inputs;
+                out_EBOX = (bag::out_EBOXt*) ec_slave[i].outputs;
 
                 /* read indevidual slave state and store in ec_slave[] */
                 ec_readstate();
 
-                printf("Slave:%d Name:%s Output size:%3dbits Input size:%3dbits State:%2d delay:%d.%d\n",
+                printf("Slave:%d Name:%s Output size:%3dbits Input size:%3dbits State:%s delay:%d.%d\n",
                      i, ec_slave[i].name, ec_slave[i].Obits, ec_slave[i].Ibits,
-                     ec_slave[i].state, (int)ec_slave[i].pdelay, ec_slave[i].hasdc);
+                     NameState(ec_slave[i].state), (int)ec_slave[i].pdelay, ec_slave[i].hasdc);
 
                 /* send one processdata cycle to init SM in slaves */
                 ec_send_processdata();
@@ -288,23 +239,25 @@ void eboxStart (){
                 printf("Ebox state: %s\n", NameState(ec_slave[i].state));
 
                 if (ec_slave[0].state == EC_STATE_OPERATIONAL ) {
-                    printf("Operational state reached for all slaves.\n");
-                    ain[0] = 0;
-                    ain[1] = 0;
-                    ainc = 0;
+                //     printf("Operational state reached for all slaves.\n");
+                    // ain[0] = 0;
+                    // ain[1] = 0;
+                    // ainc = 0;
                     dorun = 1;
-                    usleep(100000); // wait for linux to sync on DC
-                    ec_dcsync0(1, TRUE, SYNC0TIME, 0); // SYNC0 on slave 1
+                    // usleep(100000); // wait for linux to sync on DC
+                    // ec_dcsync0(1, TRUE, SYNC0TIME, 0); // SYNC0 on slave 1
                 }
 
-                // while(1) { 
-                //     i++;
-                //     printf("PD cycle %5d DCtime %12ld Cnt:%3d Data: %6d %6d %6d %6d %6d %6d %6d %6d %6d \n",
-                //         cyclecount, ec_DCtime, in_EBOX->counter, in_EBOX->stream[0], in_EBOX->stream[1],
-                //          in_EBOX->stream[2], in_EBOX->stream[3], in_EBOX->stream[4], in_EBOX->stream[5],
-                //          in_EBOX->stream[98], in_EBOX->stream[99], in_EBOX->stream[7]);
-                //     usleep(20000);
-                // }
+                while(1) { 
+                    i++;
+                     printf("PD cycle %5d DCtime %12ld Cnt:%3d Status:%2u Digital In: %#4x Analog in: %6d %6d Digital out: %#4x Analog out: %6d %6d\n",
+                            cyclecount, ec_DCtime, in_EBOX->counter, in_EBOX->status,
+                            in_EBOX->din,
+                            in_EBOX->ain[0], in_EBOX->ain[1],
+                            out_EBOX->dout,
+                            out_EBOX->aout[0], out_EBOX->aout[1]);
+                    usleep(20000);
+                }
                 dorun = 0;
             }
         }
@@ -322,6 +275,7 @@ int main(){
         printf("ec_init succeeded.\n");
 
         /* find and auto-config slaves */
+        ec_config_init(FALSE);
         // if ( ec_config_init(FALSE) > 0 ){ // does not populate IO bit size
         if ( ec_config(FALSE, &IOmap) > 0 ) { // populates IO bit size
             ec_configdc();

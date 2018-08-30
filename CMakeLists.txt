@@ -23,7 +23,7 @@ add_definitions(
 
 add_executable(
     myCode
-    el2024.cpp
+    ebox-min.cpp
 )
 
 target_link_libraries(
